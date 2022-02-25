@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"regexp"
@@ -171,7 +172,7 @@ func (conn *BridgeConnector) natsMessageHandler(msg kafka.Message) error {
 	return conn.bridge.NATS().PublishMsg(nMsg)
 }
 
-func (conn *BridgeConnector) calculateKey(subject string, replyto string) []byte {
+func (conn *BridgeConnector) calculateKey(subject string, replyto string, messageData []byte) []byte {
 	keyType := conn.config.KeyType
 	keyValue := conn.config.KeyValue
 
@@ -221,6 +222,11 @@ func (conn *BridgeConnector) calculateKey(subject string, replyto string) []byte
 		return []byte{}
 	}
 
+	if keyType == conf.Base64MessageData {
+		encodedMessageData := base64.StdEncoding.EncodeToString(messageData)
+		return []byte(encodedMessageData)
+	}
+
 	return []byte{} // empty key by default
 }
 
@@ -265,7 +271,7 @@ func (conn *BridgeConnector) subscribeToNATS(subject string, queueName string) (
 
 		// send to kafka here
 		err := conn.writer(msg).Write(kafka.Message{
-			Key:     conn.calculateKey(msg.Subject, msg.Reply),
+			Key:     conn.calculateKey(msg.Subject, msg.Reply, msg.Data),
 			Value:   msg.Data,
 			Headers: conn.convertFromNatsToKafkaHeaders(msg.Header),
 		})
@@ -327,7 +333,7 @@ func (conn *BridgeConnector) subscribeToChannel() (stan.Subscription, error) {
 			conn.bridge.Logger().Tracef("%s received message", conn.String())
 		}
 
-		key := conn.calculateKey(conn.config.Channel, conn.config.DurableName)
+		key := conn.calculateKey(conn.config.Channel, conn.config.DurableName, msg.Data)
 		err := conn.writer(msg).Write(kafka.Message{
 			Key:   key,
 			Value: msg.Data,
@@ -398,7 +404,8 @@ func (conn *BridgeConnector) subscribeToJetStream(subject string) (*nats.Subscri
 
 		var err error
 		var retryCount, traceCount int
-		key := conn.calculateKey(conn.config.Subject, conn.config.DurableName)
+		key := conn.calculateKey(conn.config.Subject, conn.config.DurableName, msg.Data)
+
 		for {
 			err = conn.writer(msg).Write(kafka.Message{
 				Key:     key,
@@ -429,7 +436,7 @@ func (conn *BridgeConnector) subscribeToJetStream(subject string) (*nats.Subscri
 					}
 					var retryIntervalMillisecond time.Duration
 					if conn.bridge.config.Kafka.RetryIntervalMillisecond < 5000 {
-						retryIntervalMillisecond = 5000
+						retryIntervalMillisecond = 500
 					} else {
 						retryIntervalMillisecond = time.Duration(conn.bridge.config.Kafka.RetryIntervalMillisecond)
 					}
