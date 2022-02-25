@@ -70,6 +70,8 @@ func NewProducer(cc conf.ConnectorConfig, bc conf.NATSKafkaBridgeConfig, topic s
 
 	if cc.Balancer == conf.LeastBytes {
 		sc.Producer.Partitioner = NewLeastBytesPartitioner
+	} else if cc.Balancer == conf.Hash {
+		sc.Producer.Partitioner = sarama.NewHashPartitioner
 	}
 
 	if cc.SASL.User != "" {
