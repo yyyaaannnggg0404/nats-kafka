@@ -396,12 +396,51 @@ func (conn *BridgeConnector) subscribeToJetStream(subject string) (*nats.Subscri
 			conn.bridge.Logger().Tracef("%s received message", conn.String())
 		}
 
+		var err error
+		var retryCount, traceCount int
 		key := conn.calculateKey(conn.config.Subject, conn.config.DurableName)
-		err := conn.writer(msg).Write(kafka.Message{
-			Key:     key,
-			Value:   msg.Data,
-			Headers: conn.convertFromNatsToKafkaHeaders(msg.Header),
-		})
+		for {
+			err = conn.writer(msg).Write(kafka.Message{
+				Key:     key,
+				Value:   msg.Data,
+				Headers: conn.convertFromNatsToKafkaHeaders(msg.Header),
+			})
+			if err != nil {
+				if conn.bridge.config.Kafka.EnableRetry {
+					if retryCount == conn.bridge.config.Kafka.RetryCount {
+						if traceEnabled {
+							conn.bridge.Logger().Tracef("end retry to publish kafka message")
+						}
+						break
+					}
+
+					conn.stats.AddMessageIn(l)
+					conn.bridge.Logger().Errorf("connector publish failure, %s, %s", conn.String(), err.Error())
+
+					if traceEnabled {
+						conn.bridge.Logger().Tracef("retry to publish kafka message, retry message: %s", string(msg.Data))
+						traceCount++
+						conn.bridge.Logger().Tracef("retry to publish kafka message, retry count: %d", traceCount)
+					}
+
+					// RetryCount < 0 will retry publish kafka message always
+					if conn.bridge.config.Kafka.RetryCount > 0 {
+						retryCount++
+					}
+					var retryIntervalMillisecond time.Duration
+					if conn.bridge.config.Kafka.RetryIntervalMillisecond < 5000 {
+						retryIntervalMillisecond = 5000
+					} else {
+						retryIntervalMillisecond = time.Duration(conn.bridge.config.Kafka.RetryIntervalMillisecond)
+					}
+					time.Sleep(retryIntervalMillisecond * time.Millisecond)
+				} else {
+					break
+				}
+			} else {
+				break
+			}
+		}
 
 		if err != nil {
 			conn.stats.AddMessageIn(l)

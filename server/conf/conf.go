@@ -20,9 +20,8 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	"io/ioutil"
-
 	"github.com/nats-io/nats-kafka/server/logging"
+	"io/ioutil"
 )
 
 const (
@@ -76,6 +75,7 @@ type NATSKafkaBridgeConfig struct {
 	JetStream  JetStreamConfig
 	Monitoring HTTPConfig
 	Connect    []ConnectorConfig
+	Kafka      KafkaConfig
 }
 
 // TLSConf holds the configuration for a TLS connection/server
@@ -170,6 +170,12 @@ type JetStreamConfig struct {
 	EnableFlowControl      bool
 	EnableAckSync          bool
 	HeartbeatInterval      int // milliseconds
+}
+
+type KafkaConfig struct {
+	EnableRetry              bool
+	RetryCount               int
+	RetryIntervalMillisecond int
 }
 
 // DefaultBridgeConfig generates a default configuration with
