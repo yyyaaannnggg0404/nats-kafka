@@ -46,6 +46,8 @@ const (
 	// on the incoming reply-to and take the first match group as the key
 	// for example foo\.(.*) for the subject/durable foo.bar would use "bar" as the key
 	ReplyRegex = "replyre"
+	//Base64MessageData in the keytype causes the key to be the incoming base64 encode message data
+	Base64MessageData = "base64MessageData"
 )
 
 const (
