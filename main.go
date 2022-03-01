@@ -51,7 +51,7 @@ func main() {
 					fmt.Println() // clear the line for the control-C
 					server.Logger().Noticef("received sig-interrupt, shutting down")
 				}
-				server.Stop()
+				//server.Stop()
 				os.Exit(0)
 			}
 

@@ -391,7 +391,7 @@ func (conn *BridgeConnector) subscribeToJetStream(subject string) (*nats.Subscri
 		options = append(options, nats.IdleHeartbeat(time.Duration(d)*time.Millisecond))
 	}
 
-	traceEnabled := conn.bridge.Logger().TraceEnabled()
+	/*traceEnabled := conn.bridge.Logger().TraceEnabled()
 	ackSyncEnabled := conn.bridge.config.JetStream.EnableAckSync
 
 	callback := func(msg *nats.Msg) {
@@ -436,7 +436,7 @@ func (conn *BridgeConnector) subscribeToJetStream(subject string) (*nats.Subscri
 					}
 					var retryIntervalMillisecond time.Duration
 					if conn.bridge.config.Kafka.RetryIntervalMillisecond < 5000 {
-						retryIntervalMillisecond = 500
+						retryIntervalMillisecond = 5000
 					} else {
 						retryIntervalMillisecond = time.Duration(conn.bridge.config.Kafka.RetryIntervalMillisecond)
 					}
@@ -468,7 +468,69 @@ func (conn *BridgeConnector) subscribeToJetStream(subject string) (*nats.Subscri
 		}
 	}
 
-	return conn.bridge.JetStream().Subscribe(subject, callback, options...)
+	return conn.bridge.JetStream().Subscribe(subject, callback, options...)*/
+
+	var sub *nats.Subscription
+	var err error
+	var message []*nats.Msg
+	var traceEnabled = conn.bridge.Logger().TraceEnabled()
+	var retryCount = 1
+
+	// todo test nats offline
+	sub, err = conn.bridge.JetStream().PullSubscribe(subject, conn.config.DurableName)
+	if err != nil {
+		conn.bridge.Logger().Errorf("pull subscribe failure, %s", err.Error())
+	} else {
+		for {
+			message, err = sub.Fetch(1)
+			if err != nil {
+				conn.bridge.Logger().Errorf("fetch message failure, %s", err.Error())
+			}
+			msg := message[0]
+
+			start := time.Now()
+			l := int64(len(msg.Data))
+
+			if traceEnabled {
+				conn.bridge.Logger().Tracef("%s received message", conn.String())
+			}
+
+			key := conn.calculateKey(conn.config.Subject, conn.config.DurableName, msg.Data)
+
+			for {
+				err = conn.writer(msg).Write(kafka.Message{
+					Key:     key,
+					Value:   msg.Data,
+					Headers: conn.convertFromNatsToKafkaHeaders(msg.Header),
+				})
+
+				if err != nil {
+					conn.stats.AddMessageIn(l)
+					conn.bridge.Logger().Errorf("connector publish failure, %s, %s", conn.String(), err.Error())
+					if traceEnabled {
+						conn.bridge.Logger().Tracef("retry to publish kafka, retry message: %s", string(msg.Data))
+						conn.bridge.Logger().Tracef("retry to publish kafka, retry count: %d", retryCount)
+						retryCount++
+					}
+					//have a rest
+					time.Sleep(5000 * time.Millisecond)
+					continue
+				} else {
+					if traceEnabled {
+						conn.bridge.Logger().Tracef("%s wrote message to kafka with key %s", conn.String(), string(key))
+					}
+					msg.AckSync()
+					if traceEnabled {
+						conn.bridge.Logger().Tracef("%s acked message to kafka", conn.String())
+					}
+					conn.stats.AddRequest(l, l, time.Since(start))
+					break
+				}
+			}
+		}
+	}
+
+	return sub, err
 }
 
 func (conn *BridgeConnector) setUpListener(target kafka.Consumer, natsCallbackFunc NATSCallback) (ShutdownCallback, error) {
