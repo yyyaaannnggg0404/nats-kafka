@@ -184,6 +184,8 @@ func (server *NATSKafkaBridge) connectToJetStream() error {
 	c := server.config.JetStream
 	if c.MaxWait > 0 {
 		opts = append(opts, nats.MaxWait(time.Duration(c.MaxWait)*time.Millisecond))
+	} else {
+		opts = append(opts, nats.MaxWait(time.Duration(86400000)*time.Millisecond))
 	}
 	if c.PublishAsyncMaxPending > 0 {
 		opts = append(opts, nats.PublishAsyncMaxPending(c.PublishAsyncMaxPending))
